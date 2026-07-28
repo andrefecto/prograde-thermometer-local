@@ -1,0 +1,16 @@
+# Contains the thermometer's stored WiFi password in cleartext (AT+WSKEY
+# returns it verbatim). Keep it locally as your rollback, but never commit it.
+reference/stock-config.txt
+reference/at-commands.txt
+
+# Packet captures. reference/prograde.pcapng is kept deliberately as the
+# evidence for the LSD_WIFI protocol, but it lists neighbouring network names,
+# so exclude captures by default and add that one back with -f if you want it.
+*.pcap
+*.pcapng
+
+# Telemetry logs from udp_listen.py
+*.jsonl
+
+node_modules/
+.DS_Store

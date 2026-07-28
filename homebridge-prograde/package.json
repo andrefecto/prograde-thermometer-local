@@ -1,0 +1,46 @@
+{
+  "name": "homebridge-prograde",
+  "version": "0.1.0",
+  "description": "HomeKit bridge for the ProGrade / Emax EM2251 WiFi grill thermometer. The device reports directly to your Homebridge host over UDP — no vendor app, no cloud account, no extra hardware.",
+  "main": "index.js",
+  "engines": {
+    "node": ">=18.0.0",
+    "homebridge": ">=1.6.0 || ^2.0.0-beta.0"
+  },
+  "keywords": [
+    "homebridge-plugin",
+    "homekit",
+    "thermometer",
+    "temperature",
+    "grill",
+    "bbq",
+    "smoker",
+    "meat-probe",
+    "prograde",
+    "emax",
+    "dtston",
+    "lierda",
+    "local",
+    "cloud-free"
+  ],
+  "author": "andrefecto",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/andrefecto/prograde-thermometer-local.git"
+  },
+  "bugs": {
+    "url": "https://github.com/andrefecto/prograde-thermometer-local/issues"
+  },
+  "homepage": "https://github.com/andrefecto/prograde-thermometer-local#readme",
+  "files": [
+    "index.js",
+    "lib/",
+    "config.schema.json",
+    "README.md"
+  ],
+  "scripts": {
+    "test": "node --test test/*.test.js",
+    "sim": "node tools/sim-run.js"
+  }
+}

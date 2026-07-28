@@ -1,0 +1,195 @@
+{
+  "pluginAlias": "ProGradeThermometer",
+  "pluginType": "platform",
+  "singular": true,
+  "headerDisplay": "Exposes a ProGrade / DTston grill thermometer to HomeKit. The device reports straight to this machine over UDP — no vendor app, no cloud account, no extra hardware.\n\nPoint the device here first with `dplus/lsd_wifi.py configure --host <device-ip> --server <this machine> --server-port 17000 --yes`.",
+  "footerDisplay": "The field mapping below is already correct for the ProGrade EM2251: the probe temperature is the little-endian pair at body offsets 5-6, in tenths of a degree Celsius. A different unit may differ - recover it with `dplus/udp_listen.py` then `dplus/analyze.py`.",
+  "schema": {
+    "type": "object",
+    "properties": {
+      "name": {
+        "title": "Accessory name",
+        "type": "string",
+        "default": "Grill Thermometer",
+        "required": true
+      },
+      "transport": {
+        "title": "Transport",
+        "type": "string",
+        "default": "sim",
+        "required": true,
+        "oneOf": [
+          {
+            "title": "UDP — the device reports to us (normal)",
+            "enum": [
+              "udp"
+            ]
+          },
+          {
+            "title": "Simulator — test HomeKit with no hardware",
+            "enum": [
+              "sim"
+            ]
+          }
+        ]
+      },
+      "listenPort": {
+        "title": "UDP listen port",
+        "type": "integer",
+        "default": 17000,
+        "description": "Must match the port set on the device with AT+NETP. The stock firmware uses 17000.",
+        "condition": {
+          "functionBody": "return model.transport === 'udp';"
+        }
+      },
+      "bindAddress": {
+        "title": "Bind address",
+        "type": "string",
+        "default": "0.0.0.0",
+        "description": "Leave as 0.0.0.0 to listen on all interfaces.",
+        "condition": {
+          "functionBody": "return model.transport === 'udp';"
+        }
+      },
+      "pollSeconds": {
+        "title": "Status poll interval (seconds)",
+        "type": "integer",
+        "default": 0,
+        "minimum": 0,
+        "description": "0 means passive: the device reports on its own, about once a second. Only set this if yours stays silent until asked."
+      },
+      "staleSeconds": {
+        "title": "Treat readings as stale after (seconds)",
+        "type": "integer",
+        "default": 120,
+        "minimum": 10,
+        "description": "After this long with no frame, HomeKit is told the sensor is inactive rather than left showing an old temperature."
+      },
+      "staticTargetC": {
+        "title": "Target temperature, in Celsius",
+        "type": "number",
+        "placeholder": "107.2",
+        "description": "The thermometer does not transmit its own alarm setpoint, so set it here and the plugin publishes a Target sensor plus a Target Reached contact sensor you can build a notification automation on. 225 F = 107.2, 203 F = 95, 165 F = 73.9. Leave blank for no target."
+      },
+      "exposeTarget": {
+        "title": "Expose the target temperature as a second sensor",
+        "type": "boolean",
+        "default": true,
+        "description": "Only appears if a target is available, either from the device or from the setting above."
+      },
+      "exposeAlarm": {
+        "title": "Expose \"target reached\" as a contact sensor",
+        "type": "boolean",
+        "default": true,
+        "description": "Contact Detected means the probe has reached the target — useful as an automation trigger for a notification."
+      },
+      "exposeBattery": {
+        "title": "Expose the battery level",
+        "type": "boolean",
+        "default": true,
+        "description": "Only appears if the device actually reports a battery level. The EM2251 does not."
+      },
+      "fields": {
+        "title": "Temperature field mapping",
+        "type": "object",
+        "properties": {
+          "probe": {
+            "title": "Probe temperature field",
+            "type": "string",
+            "default": "le5:6",
+            "description": "Offset notation from analyze.py: b4 (one byte), be4:5 (big-endian pair), le4:5 (little-endian pair). le5:6 is correct for the ProGrade EM2251."
+          },
+          "target": {
+            "title": "Target temperature field",
+            "type": "string",
+            "default": "",
+            "description": "Blank on the EM2251, which does not transmit its setpoint. Use the target setting above instead."
+          },
+          "alarm": {
+            "title": "Alarm / target-reached flag field",
+            "type": "string",
+            "default": "",
+            "description": "Leave blank to derive it by comparing probe against target."
+          },
+          "battery": {
+            "title": "Battery percent field",
+            "type": "string",
+            "default": "",
+            "description": "Blank on the EM2251, which does not report a battery level. Leave empty and no battery tile is published."
+          },
+          "scale": {
+            "title": "Scale (a in temp = a*raw + b)",
+            "type": "number",
+            "default": 0.1,
+            "description": "1 = whole degrees, 0.1 = tenths. 0.1 is correct for the ProGrade EM2251."
+          },
+          "offset": {
+            "title": "Offset (b in temp = a*raw + b)",
+            "type": "number",
+            "default": 0
+          },
+          "unit": {
+            "title": "Unit the device reports in",
+            "type": "string",
+            "default": "C",
+            "oneOf": [
+              {
+                "title": "Celsius",
+                "enum": [
+                  "C"
+                ]
+              },
+              {
+                "title": "Fahrenheit",
+                "enum": [
+                  "F"
+                ]
+              }
+            ],
+            "description": "HomeKit always stores Celsius; the Home app displays whichever unit your iPhone is set to."
+          }
+        }
+      }
+    }
+  },
+  "layout": [
+    "name",
+    "transport",
+    "listenPort",
+    "bindAddress",
+    "staticTargetC",
+    {
+      "type": "fieldset",
+      "title": "HomeKit services",
+      "expandable": true,
+      "items": [
+        "exposeTarget",
+        "exposeAlarm",
+        "exposeBattery"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced: timing",
+      "expandable": true,
+      "items": [
+        "pollSeconds",
+        "staleSeconds"
+      ]
+    },
+    {
+      "type": "fieldset",
+      "title": "Advanced: temperature field mapping",
+      "expandable": true,
+      "items": [
+        "fields.probe",
+        "fields.target",
+        "fields.alarm",
+        "fields.battery",
+        "fields.scale",
+        "fields.offset",
+        "fields.unit"
+      ]
+    }
+  ]
+}
