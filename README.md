@@ -176,6 +176,19 @@ You want `+ok=UDP,CLIENT,17000,192.168.1.50`. If it still names
 > Because the AT interface answers over the LAN, you can re-check or change any
 > setting at any time with `get --host …` and `configure --host …`.
 
+### Alternative: the module's own web UI
+
+The radio module also serves a configuration page, which does the same job without
+the command line:
+
+> `http://<device-ip>` → log in with **admin / admin** → **Network parameter
+> settings** → protocol `UDP`, port `17000`, server address = your Homebridge host.
+
+Useful as a cross-check, since it shows the same values `lsd_wifi.py get` reports.
+Some pages render in Chinese depending on the firmware build. Note this panel is
+unauthenticated beyond those default credentials — see
+[Security notes](#security-notes).
+
 ---
 
 ## Step 3 — Confirm data arrives
@@ -336,9 +349,35 @@ Celsius internally and there's no per-accessory override.
 | Temperatures wildly wrong | The field mapping doesn't match your unit — see the recover-the-mapping section in step 3. |
 | Off by a constant factor | Wrong `fields.scale`, or `fields.unit` doesn't match what the device reports in. |
 | Accessory shows "No Response" | Homebridge isn't receiving. If not on host networking, the UDP port isn't published. |
+| Temperature never updates; log says "heartbeat frames with no temperature" | The device is sending its short idle frame. It appears to transmit temperature only while actively measuring — see [Known limitations](#known-limitations). Not a configuration fault. |
 | Display shows `LLL` or `HHH` | Probe shorted by heat or water damage. A hardware fault, not a config problem. |
 
 ---
+
+## Known limitations
+
+**The device sends two kinds of message, and only one carries a temperature.**
+
+| Frame | Body | Observed when |
+| --- | --- | --- |
+| 18 bytes | 9 bytes, contains the reading | Probe at ~195 °F during a real cook |
+| 14 bytes | 5 bytes, `01 01 01 00 00`, no reading | Probe at 80–90 °F, and at 158–160 °F |
+
+Within any one capture it is consistently one or the other, about once a second.
+Both carry valid checksums, so the short frame is a deliberate heartbeat rather
+than a truncated reading.
+
+**What triggers the switch is not yet known.** Ruled out: a 50 °C threshold, and
+the alarm setpoint being armed. A threshold somewhere between 160 °F and 195 °F is
+still possible. In practice the temperature frames appear when the thermometer is
+doing its actual job, so HomeKit populates during a cook and shows the sensor
+inactive between cooks.
+
+If you can correlate the switch with something on your unit, please open an issue —
+it's the main open question here.
+
+**Also not transmitted:** the alarm setpoint and battery level. That's why the
+target is a plugin setting rather than read from the device.
 
 ## Rollback
 

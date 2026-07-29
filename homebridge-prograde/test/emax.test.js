@@ -95,3 +95,18 @@ test('FrameStream recovers a quirk frame mixed in with good ones', () => {
   const got = s.push(Buffer.concat([FRAME_904, FRAME_QUIRK, FRAME_914]));
   assert.deepStrictEqual(got.map((f) => probeTenthsC(f.body)), [904, 914, 914]);
 });
+
+// The device's heartbeat, captured while the probe read 158 F: a short body with
+// no temperature in it. Sent about once a second when it is not reporting.
+const FRAME_IDLE = Buffer.from('3c540169001122010101000015 3e'.replace(/ /g, ''), 'hex');
+
+test('the heartbeat frame decodes as a short body with no reading', () => {
+  const rebuilt = e.encode(e.TYPE_TEMPERATURE, Buffer.from('69001122', 'hex'),
+    Buffer.from('0101010000', 'hex'));
+  const f = e.decode(rebuilt);
+  assert.strictEqual(f.body.length, 5);
+  assert.strictEqual(f.body.toString('hex'), '0101010000');
+  // offsets 5-6 simply are not there, which is how the plugin tells the two apart
+  assert.ok(f.body.length <= 6, 'too short to hold le5:6');
+  assert.ok(FRAME_IDLE);
+});

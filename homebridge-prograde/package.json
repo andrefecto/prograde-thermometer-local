@@ -1,6 +1,6 @@
 {
   "name": "homebridge-prograde",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "description": "HomeKit bridge for the ProGrade / Emax EM2251 WiFi grill thermometer. The device reports directly to your Homebridge host over UDP — no vendor app, no cloud account, no extra hardware.",
   "main": "index.js",
   "engines": {

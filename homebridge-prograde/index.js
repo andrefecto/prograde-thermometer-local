@@ -261,22 +261,41 @@ class ProGradePlatform {
     const f = this.fields;
     const conv = { scale: f.scale, offset: f.offset, unit: f.unit };
 
+    // Plausible range for a food probe, in Celsius. A value outside this means
+    // the field mapping is wrong, which is otherwise invisible because HomeKit
+    // clamps the published value.
+    const PLAUSIBLE_MIN_C = -40;
+    const PLAUSIBLE_MAX_C = 300;
+
     const probeRaw = dplus.readField(frame.body, f.probe);
     const probeC = dplus.toCelsius(probeRaw, conv);
-    if (probeC !== null && Number.isFinite(probeC)) {
-      this.state.probeC = probeC;
-      this.state.lastFrameAt = Date.now();
-    } else {
-      // The mapped offset isn't in this body, so the field config doesn't match
-      // this device. Say so once rather than silently publishing nothing.
+
+    if (probeC === null || !Number.isFinite(probeC)) {
+      // readField only returns null when the body is too short to contain the
+      // field, which on this device means a heartbeat: it sends a short frame
+      // about once a second when it has no reading, and a longer one while
+      // measuring. Normal between cooks, so mention it once and stay quiet.
+      this.idleFrames = (this.idleFrames || 0) + 1;
+      if (this.idleFrames === 3) {
+        this.log.info(
+          `device is sending ${frame.body.length}-byte heartbeat frames with no `
+            + 'temperature. Normal when it is not actively measuring; the sensor '
+            + 'will go inactive in HomeKit until readings resume.',
+        );
+      }
+    } else if (probeC < PLAUSIBLE_MIN_C || probeC > PLAUSIBLE_MAX_C) {
       this.badFieldFrames = (this.badFieldFrames || 0) + 1;
       if (this.badFieldFrames === 3) {
         this.log.warn(
-          `could not read field "${f.probe}" from a ${frame.body.length}-byte ` +
-            'body. The field mapping does not match this device -- recover it ' +
-            'with dplus/udp_listen.py and dplus/analyze.py.',
+          `field "${f.probe}" gives ${probeC.toFixed(1)} C, which is not a `
+            + 'plausible probe temperature. The mapping is probably wrong for '
+            + 'this device -- recover it with dplus/udp_listen.py and '
+            + 'dplus/analyze.py.',
         );
       }
+    } else {
+      this.state.probeC = probeC;
+      this.state.lastFrameAt = Date.now();
     }
 
     if (f.target) {

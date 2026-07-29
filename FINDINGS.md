@@ -109,6 +109,14 @@ The device transmits **only** the probe temperature. Its alarm setpoint and batt
 level are not in the frame — every byte pair was checked for the setpoint (225 °F =
 1072 tenths °C, 2250 tenths °F, 225, 107) and none appear.
 
+**Two message shapes.** The 9-byte body above carries a reading. The device also
+emits a 14-byte frame with a 5-byte body of `01 01 01 00 00` and no temperature,
+about once a second, which appears to be an idle heartbeat. Observed at 80–90 °F
+and at 158–160 °F, whereas the temperature frames were observed at ~195 °F during a
+real cook. Both checksum correctly, so the short one is deliberate rather than
+truncated. What selects between them is unresolved; a 50 °C threshold and the alarm
+setpoint have both been ruled out.
+
 **Firmware quirk:** roughly one frame in eight arrives with `0x3E` (`'>'`) as its
 first byte instead of `0x3C`. The rest of the frame is intact and its checksum is
 the one computed for a leading `'<'`, so both codecs accept it rather than

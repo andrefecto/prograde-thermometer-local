@@ -224,22 +224,24 @@ test('the quirk frame with a stray > start byte still updates HomeKit', (t) => {
   assert.strictEqual(platform.probeService.get('CurrentTemperature'), 91.4);
 });
 
-test('warns when the field mapping does not fit the body', (t) => {
+test('warns when the mapping yields an implausible temperature', (t) => {
   const emax = require('../lib/emax');
   const warnings = [];
   const api = makeApi();
   plugin(api);
   const noisyLog = { ...log, warn: (m) => warnings.push(m) };
   const platform = new ProGradePlatform(noisyLog,
-    { transport: 'sim', fields: { ...plugin.DEFAULT_FIELDS, probe: 'be40:41' } },
+    // be0:1 on the real body reads 0x3030 = 12336 -> 1233.6 C, absurd
+    { transport: 'sim', fields: { ...plugin.DEFAULT_FIELDS, probe: 'be0:1' } },
     api);
   api.emit('didFinishLaunching');
   t.after(() => platform.stop());
 
   for (let i = 0; i < 3; i += 1) platform.onFrame(emax.decode(REAL_FRAME), 'emax');
-  assert.ok(warnings.some((w) => /could not read field/.test(w)),
-    `expected a mapping warning, got ${JSON.stringify(warnings)}`);
-  assert.strictEqual(platform.probeService.get('CurrentTemperature'), undefined);
+  assert.ok(warnings.some((w) => /not a plausible probe temperature/.test(w)),
+    `expected a plausibility warning, got ${JSON.stringify(warnings)}`);
+  assert.strictEqual(platform.probeService.get('CurrentTemperature'), undefined,
+    'an implausible value must not be published');
 });
 
 test('publishes only the probe when the device reports nothing else', (t) => {
@@ -447,4 +449,50 @@ test('simulator mode warns loudly that the readings are fake', (t) => {
     `expected a simulator warning, got ${JSON.stringify(warnings)}`);
   assert.ok(warnings.some((w) => /fake/i.test(w) && /transport/.test(w)),
     'the warning should say the values are fake and how to fix it');
+});
+
+test('a heartbeat frame is reported as idle, not as a mapping error', (t) => {
+  const emax = require('../lib/emax');
+  const msgs = { warn: [], info: [] };
+  const api = makeApi();
+  plugin(api);
+  const platform = new ProGradePlatform(
+    { ...log, warn: (m) => msgs.warn.push(m), info: (m) => msgs.info.push(m) },
+    { transport: 'sim' }, api,
+  );
+  api.emit('didFinishLaunching');
+  t.after(() => platform.stop());
+
+  // the real 5-byte heartbeat, three times
+  const beat = emax.encode(0x54, Buffer.from('69001122', 'hex'),
+    Buffer.from('0101010000', 'hex'));
+  for (let i = 0; i < 3; i += 1) platform.onFrame(emax.decode(beat), 'emax');
+
+  assert.ok(msgs.info.some((m) => /heartbeat/.test(m)),
+    `expected an idle notice, got ${JSON.stringify(msgs.info)}`);
+  assert.ok(!msgs.warn.some((m) => /field mapping|could not read field/.test(m)),
+    'a heartbeat must not be reported as a bad field mapping');
+  assert.strictEqual(platform.state.probeC, null, 'no reading published');
+});
+
+test('an implausible reading from a long body warns', (t) => {
+  const emax = require('../lib/emax');
+  const warnings = [];
+  const api = makeApi();
+  plugin(api);
+  const platform = new ProGradePlatform(
+    { ...log, warn: (m) => warnings.push(m) },
+    { transport: 'sim', fields: { ...plugin.DEFAULT_FIELDS, probe: 'be40:41' } },
+    api,
+  );
+  api.emit('didFinishLaunching');
+  t.after(() => platform.stop());
+
+  // 0xffff at the mapped offsets -> 6553.5 C
+  const body = Buffer.alloc(50);
+  body[40] = 0xff; body[41] = 0xff;
+  const long = emax.encode(0x54, Buffer.from('69001122', 'hex'), body);
+  for (let i = 0; i < 3; i += 1) platform.onFrame(emax.decode(long), 'emax');
+  assert.ok(warnings.some((w) => /not a plausible probe temperature/.test(w)),
+    `expected a plausibility warning, got ${JSON.stringify(warnings)}`);
 });
