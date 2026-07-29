@@ -61,6 +61,14 @@ class ProGradePlatform {
     // The device does not report its alarm setpoint, so allow one to be set here
     // purely so HomeKit gets a target and a "reached" trigger.
     this.staticTargetC = this.config.staticTargetC ?? null;
+    // 'sensor'     -> TemperatureSensor services. Correct, but the Home app
+    //                 folds sensors into a room's climate summary rather than
+    //                 giving them a tile, and hides rooms that contain only
+    //                 sensors.
+    // 'thermostat' -> a Thermostat service, which HomeKit renders as a proper
+    //                 tile with the temperature shown large, and whose target is
+    //                 settable from the phone. A deliberate misrepresentation.
+    this.style = this.config.style === 'thermostat' ? 'thermostat' : 'sensor';
 
     // Latest known state. null means "never seen", which HomeKit shows as
     // not-responding rather than as a wrong reading.
@@ -147,17 +155,22 @@ class ProGradePlatform {
         this.config.host || this.transportKind,
       );
 
-    this.probeService = this.ensureService(
-      accessory,
-      Service.TemperatureSensor,
-      'Probe',
-      'probe',
-    );
-    // The default CurrentTemperature range stops at 100 C, which a probe can
-    // exceed. Widen it or HomeKit clamps the reading.
-    this.probeService
-      .getCharacteristic(Characteristic.CurrentTemperature)
-      .setProps({ minValue: -50, maxValue: 200, minStep: 0.1 });
+    if (this.style === 'thermostat') {
+      this.buildThermostat(accessory);
+    } else {
+      this.removeService(accessory, Service.Thermostat, 'probe');
+      this.probeService = this.ensureService(
+        accessory,
+        Service.TemperatureSensor,
+        'Probe',
+        'probe',
+      );
+      // The default CurrentTemperature range stops at 100 C, which a probe can
+      // exceed. Widen it or HomeKit clamps the reading.
+      this.probeService
+        .getCharacteristic(Characteristic.CurrentTemperature)
+        .setProps({ minValue: -50, maxValue: 200, minStep: 0.1 });
+    }
 
     // Only publish what this device can actually feed. The EM2251 sends
     // temperature alone, so a target needs `staticTargetC`, and without one
@@ -166,7 +179,11 @@ class ProGradePlatform {
     const haveAlarm = Boolean(this.fields.alarm) || haveTarget;
     const haveBattery = Boolean(this.fields.battery);
 
-    if (this.config.exposeTarget !== false && haveTarget) {
+    if (this.style === 'thermostat') {
+      // the thermostat already shows and sets the target
+      this.removeService(accessory, Service.TemperatureSensor, 'target');
+      this.targetService = null;
+    } else if (this.config.exposeTarget !== false && haveTarget) {
       this.targetService = this.ensureService(
         accessory,
         Service.TemperatureSensor,
@@ -207,6 +224,60 @@ class ProGradePlatform {
       this.api.updatePlatformAccessories([accessory]);
     }
     this.refreshCharacteristics();
+  }
+
+  /**
+   * Publish the probe as a Thermostat.
+   *
+   * HomeKit has no food-probe type, and it treats sensors as second-class: they
+   * are folded into a room's climate summary instead of getting a tile, and a
+   * room containing only sensors is hidden altogether. A Thermostat is a control,
+   * so it gets a real tile with the temperature shown large -- and its target is
+   * writable, which is the only way to set the alarm point from the phone.
+   *
+   * This is knowingly a misrepresentation. HomeKit will describe it as heating,
+   * and Siri will offer to control it. The alternative is a reading you cannot
+   * see without three taps.
+   */
+  buildThermostat(accessory) {
+    this.removeService(accessory, Service.TemperatureSensor, 'probe');
+
+    const svc = this.ensureService(accessory, Service.Thermostat, 'Probe', 'probe');
+    this.probeService = svc;
+    this.thermostatService = svc;
+
+    svc.getCharacteristic(Characteristic.CurrentTemperature)
+      .setProps({ minValue: -50, maxValue: 200, minStep: 0.1 });
+
+    // Cooking targets go far beyond a thermostat's usual 10-38 C.
+    svc.getCharacteristic(Characteristic.TargetTemperature)
+      .setProps({ minValue: 0, maxValue: 150, minStep: 0.5 });
+
+    // Only Off and Heat, so the tile does not offer meaningless cooling modes.
+    const modes = Characteristic.TargetHeatingCoolingState;
+    svc.getCharacteristic(modes)
+      .setProps({ validValues: [modes.OFF, modes.HEAT] });
+
+    // Restore a target the user set previously, else fall back to the config.
+    const saved = accessory.context && accessory.context.targetC;
+    if (typeof saved === 'number') this.staticTargetC = saved;
+    if (this.staticTargetC === null) this.staticTargetC = 95; // 203 F
+
+    const target = svc.getCharacteristic(Characteristic.TargetTemperature);
+    if (target.onSet) {
+      target.onSet((value) => {
+        const c = Number(value);
+        if (!Number.isFinite(c)) return;
+        this.staticTargetC = c;
+        this.state.targetC = c;
+        if (accessory.context) accessory.context.targetC = c;
+        this.log.info(
+          `target set to ${c.toFixed(1)} C (${(c * 9 / 5 + 32).toFixed(0)} F) `
+            + 'from HomeKit',
+        );
+        this.refreshCharacteristics();
+      });
+    }
   }
 
   ensureService(accessory, type, displayName, subtype) {
@@ -348,6 +419,24 @@ class ProGradePlatform {
 
     publish(this.probeService, this.state.probeC);
     publish(this.targetService, this.state.targetC);
+
+    if (this.thermostatService) {
+      const svc = this.thermostatService;
+      const modes = Characteristic.TargetHeatingCoolingState;
+      const states = Characteristic.CurrentHeatingCoolingState;
+
+      if (this.staticTargetC !== null) {
+        svc.updateCharacteristic(Characteristic.TargetTemperature,
+          Math.min(150, Math.max(0, this.staticTargetC)));
+      }
+      // "Heating" while below target, "Off" once reached or while stale, so the
+      // tile carries a little real meaning rather than being decorative.
+      const reached = this.state.alarm || stale || this.state.probeC === null;
+      svc.updateCharacteristic(states, reached ? states.OFF : states.HEAT);
+      svc.updateCharacteristic(modes, stale ? modes.OFF : modes.HEAT);
+      svc.updateCharacteristic(Characteristic.TemperatureDisplayUnits,
+        Characteristic.TemperatureDisplayUnits.CELSIUS);
+    }
 
     if (this.alarmService) {
       this.alarmService.updateCharacteristic(

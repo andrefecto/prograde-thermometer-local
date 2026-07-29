@@ -52,7 +52,19 @@ class MockService {
         self.chars.set(key, v);
         return this;
       },
+      onSet(handler) {
+        self.setters = self.setters || {};
+        self.setters[key] = handler;
+        return this;
+      },
     };
+  }
+
+  /** Simulate HomeKit writing a characteristic, as a phone would. */
+  write(name, value) {
+    const h = (this.setters || {})[MockService.key(name)];
+    if (!h) throw new Error(`no writer registered for ${name}`);
+    return h(value);
   }
 
   addOptionalCharacteristic(name) {
@@ -68,6 +80,7 @@ class MockAccessory {
   constructor(displayName, uuid) {
     this.displayName = displayName;
     this.UUID = uuid;
+    this.context = {};
     this.services = [new MockService('AccessoryInformation', 'info', undefined)];
   }
 
@@ -92,7 +105,8 @@ class MockAccessory {
 
 const CHARS = [
   'Manufacturer', 'Model', 'SerialNumber', 'Name', 'ConfiguredName',
-  'CurrentTemperature', 'StatusActive', 'BatteryLevel',
+  'CurrentTemperature', 'StatusActive', 'BatteryLevel', 'TargetTemperature',
+  'TemperatureDisplayUnits',
 ];
 
 function makeApi() {
@@ -110,11 +124,21 @@ function makeApi() {
     BATTERY_LEVEL_NORMAL: 0,
     BATTERY_LEVEL_LOW: 1,
   });
+  Characteristic.TargetHeatingCoolingState = Object.assign(
+    'TargetHeatingCoolingState', { OFF: 0, HEAT: 1, COOL: 2, AUTO: 3 },
+  );
+  Characteristic.CurrentHeatingCoolingState = Object.assign(
+    'CurrentHeatingCoolingState', { OFF: 0, HEAT: 1, COOL: 2 },
+  );
+  Characteristic.TemperatureDisplayUnits = Object.assign(
+    'TemperatureDisplayUnits', { CELSIUS: 0, FAHRENHEIT: 1 },
+  );
 
   api.hap = {
     Service: {
       AccessoryInformation: 'AccessoryInformation',
       TemperatureSensor: 'TemperatureSensor',
+      Thermostat: 'Thermostat',
       ContactSensor: 'ContactSensor',
       Battery: 'Battery',
     },
@@ -568,4 +592,68 @@ test('acknowledgement can be turned off, and is rate limited', async (t) => {
   for (let i = 0; i < 5; i += 1) device.send(beat, serverPort + 1, '127.0.0.1');
   await new Promise((r) => setTimeout(r, 300));
   assert.strictEqual(received, 1, `expected 1 echo, got ${received}`);
+});
+
+test('thermostat style publishes a Thermostat instead of sensors', (t) => {
+  const emax = require('../lib/emax');
+  const { platform, api } = bootPlatform({
+    name: 'Grill', transport: 'sim', style: 'thermostat', staticTargetC: 107.2,
+  });
+  t.after(() => platform.stop());
+
+  const acc = api.registered[0];
+  const types = acc.services.map((s) => s.type);
+  assert.ok(types.includes('Thermostat'), `expected a Thermostat, got ${types}`);
+  assert.ok(!types.includes('TemperatureSensor'),
+    'sensors are redundant once the thermostat shows the temperature');
+
+  platform.onFrame(emax.decode(REAL_FRAME), 'emax');
+  const svc = acc.getServiceById('Thermostat', 'probe');
+  assert.strictEqual(svc.get('CurrentTemperature'), 91.4);
+  assert.strictEqual(svc.get('TargetTemperature'), 107.2);
+  // below target -> shown as heating
+  assert.strictEqual(svc.get('CurrentHeatingCoolingState'), 1);
+});
+
+test('the target range is widened past a thermostat default', (t) => {
+  const { platform, api } = bootPlatform({
+    transport: 'sim', style: 'thermostat', staticTargetC: 107.2,
+  });
+  t.after(() => platform.stop());
+
+  const svc = api.registered[0].getServiceById('Thermostat', 'probe');
+  assert.deepStrictEqual(svc.props.TargetTemperature,
+    { minValue: 0, maxValue: 150, minStep: 0.5 },
+    '107.2 C would be unreachable in the default 10-38 C range');
+  assert.deepStrictEqual(svc.props.CurrentTemperature,
+    { minValue: -50, maxValue: 200, minStep: 0.1 });
+});
+
+test('setting the target from HomeKit updates and persists it', (t) => {
+  const emax = require('../lib/emax');
+  const { platform, api } = bootPlatform({
+    transport: 'sim', style: 'thermostat', staticTargetC: 95,
+  });
+  t.after(() => platform.stop());
+
+  const acc = api.registered[0];
+  const svc = acc.getServiceById('Thermostat', 'probe');
+
+  svc.write('TargetTemperature', 73.9); // 165 F
+  assert.strictEqual(platform.staticTargetC, 73.9);
+  assert.strictEqual(acc.context.targetC, 73.9, 'survives a restart');
+
+  // and it drives the reached logic
+  platform.onFrame(emax.decode(REAL_FRAME), 'emax'); // 91.4 C, past 73.9
+  assert.strictEqual(platform.state.alarm, true);
+  assert.strictEqual(svc.get('CurrentHeatingCoolingState'), 0, 'reached -> off');
+  assert.strictEqual(platform.alarmService.get('ContactSensorState'), 0);
+});
+
+test('sensor style is still the default and unchanged', (t) => {
+  const { platform, api } = bootPlatform({ transport: 'sim' });
+  t.after(() => platform.stop());
+  const types = api.registered[0].services.map((s) => s.type);
+  assert.ok(types.includes('TemperatureSensor'));
+  assert.ok(!types.includes('Thermostat'));
 });

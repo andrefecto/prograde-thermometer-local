@@ -25,6 +25,22 @@ intercepted or proxied, and the vendor's servers are never contacted.
 HomeKit has no food-probe accessory type, hence the sensor mapping. Services only
 appear when there's real data behind them, so you never get a permanently blank tile.
 
+### Getting a proper tile: `"style": "thermostat"`
+
+HomeKit treats sensors as second class. It folds temperature sensors into a room's
+climate summary rather than giving them a tile, and **hides rooms that contain only
+sensors** — so the reading ends up several taps deep, mixed in with any HomePod in
+the same room.
+
+Setting `"style": "thermostat"` publishes the probe as a Thermostat instead. Because
+that's a control rather than a sensor, HomeKit gives it a real tile with the
+temperature shown large — and the target becomes settable from your phone instead of
+living in this config file.
+
+It is knowingly a misrepresentation. HomeKit will describe it as heating, and Siri
+will offer to control it. Changing style also changes the accessory's services, so
+you may need to remove and re-add it in the Home app.
+
 **Use *Target Reached* as an automation trigger** to get a push notification when the
 meat is done — Home app → Automation → *An Accessory Detects Something*.
 
@@ -89,6 +105,7 @@ Leave it out and you get the probe temperature alone.
 | `transport` | `udp` | `udp` for a real device, `sim` to try it with none |
 | `listenPort` | `17000` | Must match the device's configured port |
 | `bindAddress` | `0.0.0.0` | Interface to listen on |
+| `style` | `sensor` | `sensor` or `thermostat` — see above |
 | `acknowledge` | `true` | Echo datagrams back. Required, or the device never reports |
 | `staticTargetC` | — | Target in Celsius; enables Target and Target Reached |
 | `staleSeconds` | `120` | Mark sensors inactive after this much silence |

@@ -159,12 +159,33 @@
         "condition": {
           "functionBody": "return model.transport === 'udp';"
         }
+      },
+      "style": {
+        "title": "How it appears in HomeKit",
+        "type": "string",
+        "default": "sensor",
+        "oneOf": [
+          {
+            "title": "Temperature sensor (accurate)",
+            "enum": [
+              "sensor"
+            ]
+          },
+          {
+            "title": "Thermostat (own tile, settable target)",
+            "enum": [
+              "thermostat"
+            ]
+          }
+        ],
+        "description": "HomeKit folds temperature sensors into a room's climate summary and hides rooms containing only sensors, so the reading takes several taps to find. Presenting it as a thermostat gets a proper tile with the temperature shown large, and makes the target settable from the Home app. It is a deliberate misrepresentation: HomeKit will describe it as heating."
       }
     }
   },
   "layout": [
     "name",
     "transport",
+    "style",
     "listenPort",
     "bindAddress",
     "acknowledge",
