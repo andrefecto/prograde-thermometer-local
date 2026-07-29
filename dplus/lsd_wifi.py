@@ -265,13 +265,19 @@ def cmd_help(dev: LsdDevice, collect: float) -> int:
 SETTINGS = [
     ("AT+VER", "firmware version"),
     ("AT+WMODE", "AP or STA"),
+    ("AT+TMODE", "transmission mode (want throughput/transparent)"),
     ("AT+WSSSID", "station-mode SSID"),
     ("AT+WSKEY", "station-mode security and key"),
     ("AT+WANN", "address assignment"),
-    ("AT+NETP", "protocol, role, port, server"),
+    ("AT+UART", "serial parameters as the module sees them"),
+    ("AT+NETP", "socket A: protocol, role, port, server"),
+    ("AT+SOCKB", "socket B: a SECOND destination, if configured"),
+    ("AT+TCPLK", "socket A link status"),
+    ("AT+TCPLKB", "socket B link status"),
+    ("AT+TCPDIS", "socket A disconnect flag"),
+    ("AT+WSLK", "STA link status"),
     ("AT+WSLQ", "signal level"),
     ("AT+WSMAC", "MAC"),
-    ("AT+TCPDIS", "socket disconnect flag"),
 ]
 
 
