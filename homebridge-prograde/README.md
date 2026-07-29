@@ -81,7 +81,7 @@ Leave it out and you get the probe temperature alone.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `transport` | `sim` | `udp` for a real device, `sim` to try it with none |
+| `transport` | `udp` | `udp` for a real device, `sim` to try it with none |
 | `listenPort` | `17000` | Must match the device's configured port |
 | `bindAddress` | `0.0.0.0` | Interface to listen on |
 | `staticTargetC` | — | Target in Celsius; enables Target and Target Reached |

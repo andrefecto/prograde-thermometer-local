@@ -55,7 +55,9 @@ class ProGradePlatform {
     this.fields = { ...DEFAULT_FIELDS, ...(this.config.fields || {}) };
     this.staleSeconds = this.config.staleSeconds ?? 120;
     this.pollSeconds = this.config.pollSeconds ?? 0;
-    this.transportKind = this.config.transport || 'sim';
+    // Default to the real device. A simulator default means a fresh install
+    // silently reports fake temperatures, which is worse than not working.
+    this.transportKind = this.config.transport || 'udp';
     // The device does not report its alarm setpoint, so allow one to be set here
     // purely so HomeKit gets a target and a "reached" trigger.
     this.staticTargetC = this.config.staticTargetC ?? null;

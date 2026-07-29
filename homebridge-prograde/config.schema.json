@@ -16,7 +16,7 @@
       "transport": {
         "title": "Transport",
         "type": "string",
-        "default": "sim",
+        "default": "udp",
         "required": true,
         "oneOf": [
           {
@@ -31,7 +31,8 @@
               "sim"
             ]
           }
-        ]
+        ],
+        "description": "Leave as UDP unless you are testing without hardware. The simulator reports fabricated temperatures."
       },
       "listenPort": {
         "title": "UDP listen port",

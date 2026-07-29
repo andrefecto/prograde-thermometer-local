@@ -425,3 +425,26 @@ test('wifi state frames are logged but do not disturb the readings', (t) => {
   );
   assert.strictEqual(platform.probeService.get('CurrentTemperature'), 68.5);
 });
+
+test('defaults to the real device, not the simulator', (t) => {
+  // A simulator default silently reports fake temperatures on a fresh install.
+  const { platform } = bootPlatform({ name: 'Grill' });
+  t.after(() => platform.stop());
+  assert.strictEqual(platform.transportKind, 'udp');
+});
+
+test('simulator mode warns loudly that the readings are fake', (t) => {
+  const warnings = [];
+  const api = makeApi();
+  plugin(api);
+  const platform = new ProGradePlatform(
+    { ...log, warn: (m) => warnings.push(m) }, { transport: 'sim' }, api,
+  );
+  api.emit('didFinishLaunching');
+  t.after(() => platform.stop());
+
+  assert.ok(warnings.some((w) => /SIMULATOR MODE/.test(w)),
+    `expected a simulator warning, got ${JSON.stringify(warnings)}`);
+  assert.ok(warnings.some((w) => /fake/i.test(w) && /transport/.test(w)),
+    'the warning should say the values are fake and how to fix it');
+});

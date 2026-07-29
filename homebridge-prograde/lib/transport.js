@@ -123,7 +123,9 @@ class SimTransport extends EventEmitter {
   }
 
   start() {
-    this.log.info('simulator running: no device, no network, no pairing');
+    this.log.warn('SIMULATOR MODE: these temperatures are fake. No device is '
+      + 'being read. Set "transport": "udp" in the plugin config to use a '
+      + 'real thermometer.');
     this.emit('up');
     this.timer = setInterval(() => this.tick(), this.intervalMs);
     setImmediate(() => this.tick());
