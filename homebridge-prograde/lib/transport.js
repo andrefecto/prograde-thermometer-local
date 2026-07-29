@@ -34,11 +34,17 @@ const emax = require('./emax');
  * back to it without configuring an address.
  */
 class UdpTransport extends EventEmitter {
-  constructor({ port, bindAddress = '0.0.0.0', log, deviceAddress = null }) {
+  constructor({
+    port, bindAddress = '0.0.0.0', log, deviceAddress = null,
+    acknowledge = true, ackMinIntervalMs = 200,
+  }) {
     super();
-    Object.assign(this, { port, bindAddress, log, deviceAddress });
+    Object.assign(this, {
+      port, bindAddress, log, deviceAddress, acknowledge, ackMinIntervalMs,
+    });
     this.socket = null;
     this.streams = new Map(); // per-sender reassembly
+    this.lastAckAt = 0;
   }
 
   start() {
@@ -77,6 +83,8 @@ class UdpTransport extends EventEmitter {
         );
       }
       for (const { format, frame } of frames) this.emit('frame', frame, format);
+
+      this.acknowledge_(msg, rinfo);
     });
 
     socket.on('error', (err) => {
@@ -85,6 +93,28 @@ class UdpTransport extends EventEmitter {
     });
 
     socket.bind(this.port, this.bindAddress);
+  }
+
+  /**
+   * Echo the datagram straight back to the device.
+   *
+   * The thermometer will not volunteer a reading. Left alone it repeats a short
+   * heartbeat frame once a second and never sends a temperature, even while its
+   * own alarm is going off. Echo that heartbeat back and it replies with the
+   * probe temperature -- the vendor's server evidently acknowledged every packet,
+   * and the MCU treats the acknowledgement as permission to report.
+   *
+   * Rate-limited because our echo provokes a reply, which we would also echo:
+   * without a floor on the interval that becomes a tight ping-pong.
+   */
+  acknowledge_(msg, rinfo) {
+    if (!this.acknowledge || !this.socket) return;
+    const now = Date.now();
+    if (now - this.lastAckAt < this.ackMinIntervalMs) return;
+    this.lastAckAt = now;
+    this.socket.send(msg, rinfo.port, rinfo.address, (err) => {
+      if (err) this.log.debug(`ack failed: ${err.message}`);
+    });
   }
 
   /** Send a frame back to whichever address last talked to us. */
@@ -179,6 +209,7 @@ function createTransport(config, log) {
       return new UdpTransport({
         port: config.listenPort || 17000,
         bindAddress: config.bindAddress || '0.0.0.0',
+        acknowledge: config.acknowledge !== false,
         log,
       });
     case 'sim':

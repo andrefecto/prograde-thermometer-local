@@ -150,6 +150,15 @@
             "description": "HomeKit always stores Celsius; the Home app displays whichever unit your iPhone is set to."
           }
         }
+      },
+      "acknowledge": {
+        "title": "Acknowledge the device's messages",
+        "type": "boolean",
+        "default": true,
+        "description": "Echoes each datagram back to the thermometer. Required: it will not send a temperature unless its heartbeat is acknowledged. Only turn this off for diagnostics.",
+        "condition": {
+          "functionBody": "return model.transport === 'udp';"
+        }
       }
     }
   },
@@ -158,6 +167,7 @@
     "transport",
     "listenPort",
     "bindAddress",
+    "acknowledge",
     "staticTargetC",
     {
       "type": "fieldset",
@@ -192,5 +202,6 @@
         "fields.unit"
       ]
     }
-  ]
+  ],
+  "version": null
 }

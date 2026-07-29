@@ -88,7 +88,8 @@ def decode_datagram(data: bytes) -> list[tuple[str, object]]:
 
 
 def listen(port: str, host: str, log_path: str | None,
-           duration: float | None) -> int:
+           duration: float | None, acknowledge: bool = True,
+           ack_min_interval: float = 0.2) -> int:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     try:
         sock.bind((host, port))
@@ -104,9 +105,15 @@ def listen(port: str, host: str, log_path: str | None,
     frames = packets = undecoded = 0
 
     print(f"listening on udp {host}:{port} -- Ctrl-C to stop")
+    if acknowledge:
+        print("acknowledging each datagram: the thermometer will not report a")
+        print("temperature unless its heartbeat is echoed back to it.")
+    else:
+        print("NOT acknowledging (--no-ack). Expect heartbeat frames only.")
     print("tip: note the LCD reading, and the seconds shown in each line, every")
     print("     time a frame appears. analyze.py needs those pairs to pin down")
     print("     the temperature bytes.\n")
+    last_ack = 0.0
 
     try:
         while duration is None or time.time() - started < duration:
@@ -116,6 +123,17 @@ def listen(port: str, host: str, log_path: str | None,
                 continue
             packets += 1
             ts = time.time()
+
+            # Echo the datagram straight back. Left unacknowledged the device
+            # repeats a short heartbeat and never sends a reading; echo it and
+            # the MCU replies with the probe temperature. Rate-limited, because
+            # our echo provokes a reply that we would also echo.
+            if acknowledge and ts - last_ack >= ack_min_interval:
+                last_ack = ts
+                try:
+                    sock.sendto(data, addr)
+                except OSError as exc:
+                    print(f"    ack failed: {exc}", file=sys.stderr)
 
             found = decode_datagram(data)
             if not found:
@@ -189,7 +207,8 @@ def _selftest() -> int:
     probe.close()
 
     t = threading.Thread(
-        target=listen, args=(port, "127.0.0.1", log_path, 3.0), daemon=True
+        target=listen, args=(port, "127.0.0.1", log_path, 3.0, False),
+        daemon=True
     )
     t.start()
     time.sleep(0.5)
@@ -256,12 +275,16 @@ def main() -> int:
                     help="address to bind (default all interfaces)")
     ap.add_argument("--log", help="append decoded frames to this .jsonl file")
     ap.add_argument("--seconds", type=float, help="stop after this long")
+    ap.add_argument("--no-ack", action="store_true",
+                    help="do not echo datagrams back. The device will then only "
+                         "send heartbeat frames, with no temperature.")
     ap.add_argument("--selftest", action="store_true")
     args = ap.parse_args()
 
     if args.selftest:
         return _selftest()
-    return listen(args.port, args.host, args.log, args.seconds)
+    return listen(args.port, args.host, args.log, args.seconds,
+                  acknowledge=not args.no_ack)
 
 
 if __name__ == "__main__":

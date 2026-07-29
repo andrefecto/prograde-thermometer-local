@@ -109,13 +109,30 @@ The device transmits **only** the probe temperature. Its alarm setpoint and batt
 level are not in the frame — every byte pair was checked for the setpoint (225 °F =
 1072 tenths °C, 2250 tenths °F, 225, 107) and none appear.
 
-**Two message shapes.** The 9-byte body above carries a reading. The device also
-emits a 14-byte frame with a 5-byte body of `01 01 01 00 00` and no temperature,
-about once a second, which appears to be an idle heartbeat. Observed at 80–90 °F
-and at 158–160 °F, whereas the temperature frames were observed at ~195 °F during a
-real cook. Both checksum correctly, so the short one is deliberate rather than
-truncated. What selects between them is unresolved; a 50 °C threshold and the alarm
-setpoint have both been ruled out.
+### The device will not report unless you acknowledge it
+
+**This is the part that is easy to get wrong.** Left alone, the thermometer sends a
+14-byte heartbeat once a second and *never* a temperature — not even while its own
+alarm is sounding, so it plainly knows the reading:
+
+```
+3c 54 01 <dev id> 01 01 01 00 00 <ck> 3e      heartbeat, 5-byte body, no reading
+```
+
+**Echo that datagram back to it verbatim and the MCU immediately replies with the
+probe temperature** in the 9-byte form above. The vendor's server evidently
+acknowledged every packet, and the MCU treats the acknowledgement as permission to
+report.
+
+So a self-hosted server must echo. `dplus/udp_listen.py` does this by default
+(`--no-ack` to disable) and so does the Homebridge plugin (`acknowledge: false` to
+disable). Rate-limit the echo: your acknowledgement provokes a reply, which would
+also be echoed, and without a floor on the interval that becomes a tight
+ping-pong.
+
+Things that turned out **not** to explain the silence, in case they save someone
+else the time: a 50 °C threshold, a battery brownout, whether the alarm setpoint
+was armed, and a second socket (`AT+SOCKB` is `NONE` on this unit).
 
 **Firmware quirk:** roughly one frame in eight arrives with `0x3E` (`'>'`) as its
 first byte instead of `0x3C`. The rest of the frame is intact and its checksum is

@@ -496,3 +496,76 @@ test('an implausible reading from a long body warns', (t) => {
   assert.ok(warnings.some((w) => /not a plausible probe temperature/.test(w)),
     `expected a plausibility warning, got ${JSON.stringify(warnings)}`);
 });
+
+test('the udp transport echoes datagrams back so the device will report', async (t) => {
+  const dgram = require('dgram');
+  const emax = require('../lib/emax');
+  const { UdpTransport } = require('../lib/transport');
+
+  // stand in for the thermometer: send a heartbeat, expect it echoed back
+  const device = dgram.createSocket('udp4');
+  await new Promise((res) => device.bind(0, '127.0.0.1', res));
+  t.after(() => { try { device.close(); } catch { /* closed */ } });
+
+  const probe = dgram.createSocket('udp4');
+  await new Promise((res) => probe.bind(0, '127.0.0.1', res));
+  const serverPort = probe.address().port;
+  await new Promise((res) => probe.close(res));
+
+  const udp = new UdpTransport({
+    port: serverPort, bindAddress: '127.0.0.1', log, ackMinIntervalMs: 0,
+  });
+  t.after(() => udp.stop());
+  await new Promise((res) => { udp.on('up', res); udp.start(); });
+
+  const beat = emax.encode(0x54, Buffer.from('69001122', 'hex'),
+    Buffer.from('0101010000', 'hex'));
+
+  const echoed = new Promise((res) => device.once('message', (m) => res(m)));
+  device.send(beat, serverPort, '127.0.0.1');
+
+  const back = await echoed;
+  assert.deepStrictEqual(back, beat,
+    'the device must receive its own frame back verbatim');
+});
+
+test('acknowledgement can be turned off, and is rate limited', async (t) => {
+  const dgram = require('dgram');
+  const emax = require('../lib/emax');
+  const { UdpTransport } = require('../lib/transport');
+
+  const device = dgram.createSocket('udp4');
+  await new Promise((res) => device.bind(0, '127.0.0.1', res));
+  t.after(() => { try { device.close(); } catch { /* closed */ } });
+  let received = 0;
+  device.on('message', () => { received += 1; });
+
+  const probe = dgram.createSocket('udp4');
+  await new Promise((res) => probe.bind(0, '127.0.0.1', res));
+  const serverPort = probe.address().port;
+  await new Promise((res) => probe.close(res));
+
+  const udp = new UdpTransport({
+    port: serverPort, bindAddress: '127.0.0.1', log, acknowledge: false,
+  });
+  t.after(() => udp.stop());
+  await new Promise((res) => { udp.on('up', res); udp.start(); });
+
+  const beat = emax.encode(0x54, Buffer.from('69001122', 'hex'),
+    Buffer.from('0101010000', 'hex'));
+  device.send(beat, serverPort, '127.0.0.1');
+  await new Promise((r) => setTimeout(r, 250));
+  assert.strictEqual(received, 0, 'nothing should be echoed when disabled');
+
+  // and with a rate floor, a burst produces at most one echo
+  const udp2 = new UdpTransport({
+    port: serverPort + 1, bindAddress: '127.0.0.1', log,
+    ackMinIntervalMs: 10_000,
+  });
+  t.after(() => udp2.stop());
+  await new Promise((res) => { udp2.on('up', res); udp2.start(); });
+  received = 0;
+  for (let i = 0; i < 5; i += 1) device.send(beat, serverPort + 1, '127.0.0.1');
+  await new Promise((r) => setTimeout(r, 300));
+  assert.strictEqual(received, 1, `expected 1 echo, got ${received}`);
+});

@@ -63,6 +63,11 @@ The plugin appears in the Homebridge UI as **ProGrade Thermometer**. By hand:
 `listenPort` must match the port you set on the device. The field mapping defaults
 are already correct for the EM2251.
 
+**The plugin echoes each datagram back to the thermometer**, because it will not
+send a temperature otherwise — left unacknowledged it repeats a heartbeat forever,
+even while its own alarm sounds. Set `"acknowledge": false` to disable, though
+then you will get no readings.
+
 ### Why the target is a setting
 
 The thermometer never transmits its own alarm setpoint — it only sends the probe
@@ -84,6 +89,7 @@ Leave it out and you get the probe temperature alone.
 | `transport` | `udp` | `udp` for a real device, `sim` to try it with none |
 | `listenPort` | `17000` | Must match the device's configured port |
 | `bindAddress` | `0.0.0.0` | Interface to listen on |
+| `acknowledge` | `true` | Echo datagrams back. Required, or the device never reports |
 | `staticTargetC` | — | Target in Celsius; enables Target and Target Reached |
 | `staleSeconds` | `120` | Mark sensors inactive after this much silence |
 | `pollSeconds` | `0` | `0` = passive. The EM2251 reports unprompted |
